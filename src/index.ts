@@ -1,19 +1,15 @@
 import { env } from "./env.js";
-import { Client, Collection, Events, GatewayIntentBits } from "discord.js";
+import { Events, MessageFlags } from "discord.js";
 import commandsIndex from "./commands/index.js";
-import type { CommandHandler } from "./command.js";
-
-const client = new Client({
-  intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent,
-  ],
-});
-var commands = new Collection<string, CommandHandler>();
+import { client, service_ready } from "./services/client.js";
+import {
+  buttonRegistry,
+  commandsRegistry,
+  modalRegistry,
+} from "./services/registry.js";
 
 for (const command of commandsIndex) {
-  commands.set(command.data.name, command.execute);
+  commandsRegistry.set(command.data.name, command.execute);
 }
 
 client.on(Events.ClientReady, (readyClient) => {
@@ -21,19 +17,49 @@ client.on(Events.ClientReady, (readyClient) => {
 });
 
 client.on(Events.InteractionCreate, async (interaction) => {
-  if (!interaction.isChatInputCommand()) return;
-
-  const execute = commands.get(interaction.commandName);
-
-  if (!execute) {
-    console.error("No matching command found!");
+  if (!service_ready.status) {
+    if (interaction.isRepliable())
+      interaction.reply({
+        content: "Service is not ready yet. Please try again later.",
+        flags: MessageFlags.Ephemeral,
+      });
     return;
   }
-
   try {
-    await execute(interaction);
+    if (interaction.isChatInputCommand()) {
+      const handler = commandsRegistry.get(interaction.commandName);
+      return await handler?.(interaction);
+    }
+
+    if (interaction.isButton()) {
+      const handler = buttonRegistry.get(interaction.customId);
+      return await handler?.(interaction);
+    }
+
+    if (interaction.isModalSubmit()) {
+      const handler = modalRegistry.get(interaction.customId);
+      return await handler?.(interaction);
+    }
   } catch (error) {
-    console.error(error);
+    console.error("Interaction handler failed:", error);
+
+    if (interaction.isRepliable()) {
+      try {
+        if (interaction.replied || interaction.deferred) {
+          await interaction.followUp({
+            content: `An unexpected error occurred.`,
+            flags: MessageFlags.Ephemeral,
+          });
+        } else {
+          await interaction.reply({
+            content: "An unexpected error occurred.",
+            flags: MessageFlags.Ephemeral,
+          });
+        }
+      } catch {
+        // Ignore failures to send the error message.
+      }
+    }
   }
 });
 

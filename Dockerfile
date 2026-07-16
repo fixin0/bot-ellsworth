@@ -1,4 +1,4 @@
-FROM node:20-alpine AS builder
+FROM node:26-alpine AS builder
 
 WORKDIR /app
 
@@ -11,7 +11,7 @@ RUN npm run build
 
 
 
-FROM node:20-alpine
+FROM node:26-alpine
 
 WORKDIR /app
 
@@ -19,6 +19,8 @@ ENV NODE_ENV=production
 
 COPY package*.json ./
 RUN npm ci --only=production
+
+COPY sql ./sql
 
 COPY --from=builder /app/dist ./dist
 
